@@ -1,0 +1,6 @@
+
+
+examples:
+-> (LQR) H2 full state feedback by gradient based optimization (not ricatti)
+-> (SOF) Static Output Feedback (NP hard)
+-> (LQG) mixed H2 and Hinf full order dynamic state feedback (compare with LMI based solution)
