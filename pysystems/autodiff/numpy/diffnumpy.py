@@ -1,43 +1,80 @@
 # -*- coding: utf-8 -*-
 import numpy as np
+import itertools as it
+import functools as ft
 from collections import defaultdict
-import functools
 
-from autodiff import *
 
+from ..autodiff import *
+
+__all__ = [
+    'DiffUFunc',
+    
+    'DiffNDArray',
+    'darray'
+    ]
+def passthrough_properties(field, prop_names):
+    def decorate(cls):
+        for prop_name in prop_names:
+            #fix prop_name
+            def getter(self, prop_name=prop_name):
+                return getattr(getattr(self, field), prop_name)
+            
+            def setter(self, value, prop_name=prop_name):
+                return setattr(getattr(self, field), prop_name, value)
+                
+            def deleter(self, prop_name=prop_name):
+                return delattr(getattr(self, field), prop_name)
+            
+            #? maybe partial prop_name out?
+            setattr(cls, prop_name, property(getter, setter, deleter))
+        
+        return cls
+    return decorate
+
+def _broadcast_derivative(index, dfun):
+    def new_dfun(*args, **kwargs):
+        result = dfun(*args, **kwargs)
+        
+        rshape = result.shape
+        dshape = arg[index].shape
+        
+        rndim = len(rshape)
+        dndim = len(dshape)
+        
+        no_broadcast = [dim > 1 for dim in dshape]
+        idx1 = np.array([False]*(rndim-dndim) + no_broadcast + [False]*dndim)
+        idx2 = np.array([False]*rndim + no_broadcast)
+        
+        a = np.arange(rndim+dndim)
+        a[idx1], a[idx2] = a[idx2], a[idx1]
+        
+        result = result[[Ellipsis]+[np.newaxis]*dndim].transpose(a)
+        return np.broadcast_to(result, rshape+dshape)
+    return new_dfun
+
+_fun_prop_names = ('nin', 'nout', 'nargs', 'ntypes', 'types', 'identity')
+@passthrough_properties('fun', _fun_prop_names)
 class DiffUFunc(DiffFunction):
-    def __init__(self, fun, *dfun):#, **kdfun):
-        self.fun = fun
-        #functools.update_wrapper(self, fun)
-        
-        self.set_derivative(*dfun)
-        
-    def __call__(self, *args, **kwargs):
-        argvalues = [arg.value if isinstance(arg, DiffObject) else arg for arg in args]
-        #kwargvalues = {(kw, arg.value if arg isinstance(DiffObject) else arg for kw, arg in kwargs.items)}
-        f = self.fun(*argvalues, **kwargs)#, **kwargvalues)
-        d = {}        
-        
-        for i, arg in enumerate(args):
-            if isinstance(arg, DiffObject):
-                #TODO: should I check derivative is provided?
-                #TODO: provide option for numerically computed derivative if not
-                #   provided?
-                darg = arg.chain(self.dfun[i](*argvalues, **kwargs))
-                for k, v in darg.viewitems():
-                    d[k] = v + d[k] if k in d else v
+    def set_derivatives(self, *dfun):
+        self.dfun = list(it.starmap(_broadcast_derivative, enumerate(dfun)))
+    
+    def set_derivative(self, index, dfun):
+        dfun = _broadcast_derivative(index, dfun)
+        if index < len(self.dfun):
+            self.dfun[index] = dfun
 
-        #chain if DiffObjArg is not None
-        #if DiffObjArg is None append derivative
-        if d:
-            return DiffObject(f, d)
-        else:
-            return f
+        self.dfun += [NoneFunction]*(index-len(self.dfun)) + [dfun]
 
+
+    
 add = DiffUFunc(np.add, \
     lambda x1, x2: 1., \
     lambda x1, x2: 1.)
-  
+
+
+
+
 def _index_derivative(index, ndim):
     if not isinstance(index, tuple):
         index = (index,)
@@ -45,10 +82,12 @@ def _index_derivative(index, ndim):
         index += (slice(None),)*ndim
     return index
 
+
 #TODO: Make ndarray a factory class to support numpy nd arrays of objects that 
 #are not floats
 #TODO: Implement parametrization 'diag', 'sym', 'asym', 'triu', 'trid'
-_value_prop_names = ('flags', 'strides', 'data', 'size', 'itemsize', 'nbytes')
+_value_prop_names = ('shape', 'ndim', 'flags', 'strides', 'data', 'size', \
+    'itemsize', 'nbytes')
 @passthrough_properties('value', _value_prop_names)
 class DiffNDArray(DiffObject):
     def __init__(self, value, d=None, parametrization='full', name=None, base=None):
@@ -168,14 +207,6 @@ class DiffNDArray(DiffObject):
     
     def __iter__(self):
         raise NotImplementedError("__iter__ not yet implemented")
-        
-    @property
-    def shape(self):
-        return self.value.shape
-    
-    @property
-    def ndim(self):
-        return self.value.ndim
     
     def track(self, d_self=None):
         '''
@@ -203,10 +234,7 @@ DiffObject._types[np.ndarray] = DiffNDArray
 #TODO: implement specialized scalar types
 DiffObject._types[np.float64] = DiffNDArray
 DiffObject._types[np.float32] = DiffNDArray
-DiffObject._types[np.float_] = DiffNDArray
-
-#alias
-ndarray = DiffNDArray    
+DiffObject._types[np.float16] = DiffNDArray  
     
 class DiffScalar(DiffObject):
     pass
@@ -226,3 +254,4 @@ if __name__ == '__main__':
     
     def foo(x,M=np.identity(3)):
         return vdot(dot(M,x),x)
+
