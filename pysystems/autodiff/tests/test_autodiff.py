@@ -5,7 +5,7 @@ sys.path.append('C:\\Work\\pySystems\\pysystems')
 
 import autodiff as d
 #import autodiff.diffnumpy as dnp
-from autodiff import diffnumpy as dnp
+import autodiff.numpy as dnp
 import numpy as np
 import math
 
@@ -31,4 +31,5 @@ if __name__ == '__main__':
     def foo(x1, x2):
         return 1., x1, 0.
         
-    b, n, m = foo(a,b)
+    l, n, m = foo(a,b)
+    lf, nf, mf = foo.fd(a,b)

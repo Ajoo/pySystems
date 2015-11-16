@@ -1,9 +1,21 @@
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
+from collections import defaultdict, Iterable
+try:
+    from itertools import izip as zip
+    from itertools import imap as map
+    from itertools import ifilter as filter
+except ImportError:
+    pass
+
 import numpy as np
 import itertools as it
 import functools as ft
 from collections import defaultdict
-
 
 from ..autodiff import *
 
@@ -13,6 +25,7 @@ __all__ = [
     'DiffNDArray',
     'darray'
     ]
+    
 def passthrough_properties(field, prop_names):
     def decorate(cls):
         for prop_name in prop_names:
@@ -37,7 +50,7 @@ def _broadcast_derivative(index, dfun):
         result = dfun(*args, **kwargs)
         
         rshape = result.shape
-        dshape = arg[index].shape
+        dshape = args[index].shape
         
         rndim = len(rshape)
         dndim = len(dshape)
@@ -67,14 +80,6 @@ class DiffUFunc(DiffFunction):
         self.dfun += [NoneFunction]*(index-len(self.dfun)) + [dfun]
 
 
-    
-add = DiffUFunc(np.add, \
-    lambda x1, x2: 1., \
-    lambda x1, x2: 1.)
-
-
-
-
 def _index_derivative(index, ndim):
     if not isinstance(index, tuple):
         index = (index,)
@@ -90,6 +95,7 @@ _value_prop_names = ('shape', 'ndim', 'flags', 'strides', 'data', 'size', \
     'itemsize', 'nbytes')
 @passthrough_properties('value', _value_prop_names)
 class DiffNDArray(DiffObject):
+    eps = 1e-8
     def __init__(self, value, d=None, parametrization='full', name=None, base=None):
 #        if value.dtype is np.float64:
 #            raise ValueError("Type {0} not implemented as a differentiable ndarray object"\
@@ -229,29 +235,31 @@ class DiffNDArray(DiffObject):
         d = {k: np.tensordot(df,dk,axes=ax) for k, dk in self.d.viewitems()}
         return d
         
+    def delta(self, eps=None):
+        if not eps:
+            eps = self.eps
+        eps = eps*np.reshape(np.identity(self.size), (self.size,) + self.shape)
+        delta = map(lambda d: d[0], np.split(self.value + eps, self.size))
+        return delta
+    
+    def chain_from_delta(self, f, delta, eps=None):
+        if not eps:
+            eps = self.eps
+        df = (np.stack(delta)-f)/eps
+        df = np.rollaxis(df,1).reshape(f.shape + self.shape)
+        return self.chain(df)  
 DiffObject._types[np.ndarray] = DiffNDArray
 #for now register numpy scalar float types
 #TODO: implement specialized scalar types
 DiffObject._types[np.float64] = DiffNDArray
 DiffObject._types[np.float32] = DiffNDArray
-DiffObject._types[np.float16] = DiffNDArray  
+DiffObject._types[np.float16] = DiffNDArray
     
+darray = DiffNDArray
+
 class DiffScalar(DiffObject):
     pass
 
 
 
-# TEST
-if __name__ == '__main__':
-        
-    vdot = DiffFunction(np.vdot, lambda x, y: y, lambda x, y: x)
-    dot = DiffFunction(np.dot, lambda x, y: np.outer(np.identity(3),y).reshape((3,3,3)), lambda x, y: x)
-    
-    x = DiffObject(3*np.identity(3),name='x')
-    y = DiffObject(np.array([1.,2.,3.]),name='y')
-    
-    z = dot(x ,y)
-    
-    def foo(x,M=np.identity(3)):
-        return vdot(dot(M,x),x)
 

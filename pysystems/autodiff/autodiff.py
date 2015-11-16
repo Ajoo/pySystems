@@ -133,6 +133,37 @@ class DiffFunction(object):
         #return functools.partial(DiffFunction.__call__, self, instance) 
         return types.MethodType(self, instance)
         
+    def finite_differences(self, *args, **kwargs):
+        argvalues = [arg.value if isinstance(arg, DiffObject) else arg for arg in args]
+        kwargvalues = kwargs #TODO: for now can not diff wrt kwargs       
+        
+        f = self.fun(*argvalues, **kwargvalues)
+        if not any([isinstance(arg, DiffObject) for arg in args]):
+            return f
+        
+        df = [self.finite_difference(i, arg, f, *argvalues, **kwargvalues) \
+            for i, arg in enumerate(args) if isinstance(arg, DiffObject)]
+        if type(f) in DiffObject._types:        
+            d = sum_dicts(*df)
+            return DiffObject(f, d)
+        else:
+            d = [sum_dicts(*d) for d in zip(*df)]
+            return type(f)(map(DiffObject, f, d))
+
+    
+    def finite_difference(self, index, darg, f, *args, **kwargs):
+        farg = lambda arg: self.fun(*(args[0:index]+(arg,)+args[index+1:]), **kwargs)
+        d = map(farg, darg.delta())
+        if type(f) in DiffObject._types:
+            return darg.chain_from_delta(f, d)
+        elif isinstance(f, Iterable):
+            return [darg.chain_from_delta(fi, di) for fi, di in zip(f,zip(*d))]
+            
+        raise TypeError('DiffFunction output not implemented as a DiffObject')
+    
+    fd = finite_differences #alias for convenience
+    
+    
     #TODO: use itertools for lazy evaluation and memory efficiency
     def __call__(self, *args, **kwargs):
         argvalues = [arg.value if isinstance(arg, DiffObject) else arg for arg in args]
@@ -210,6 +241,7 @@ def cfunction(fun):
 #               derivative information
 #? Generalize to Complex? DiffNumber or DiffScalar?
 class DiffFloat(DiffObject):
+    eps = 1e-8
     def __init__(self, value, d=None, name=None):
         if not isinstance(value, numbers.Number):
             raise ValueError("DiffFloat does not support {0} values".format(type(value)))
@@ -237,6 +269,17 @@ class DiffFloat(DiffObject):
         d = {k: df*dk for k, dk in self.d.viewitems()}
         return d
   
+    def delta(self, eps=None):
+        if not eps:
+            eps = self.eps
+        return [self.value + eps]
+    
+    def chain_from_delta(self, f, delta, eps=None):
+        if not eps:
+            eps = self.eps
+        df = (delta[0]-f)/eps
+        return self.chain(df)
+    
     def __repr__(self):
         if self.name:
             return self.name + '(' + repr(self.value) + ')'
@@ -281,12 +324,12 @@ def dfloat(value):
 #float operations not implemented (yet)
 ops_not_implemented = ('mod', 'divmod', 'floordiv', 'trunc')
     
-for opname in ops_not_implemented:
-    setattr(DiffFloat, '__{0}__'.format(opname), _not_implemented_func)
+#for opname in ops_not_implemented:
+#    setattr(DiffFloat, '__{0}__'.format(opname), _not_implemented_func)
 
 ops_act_on_value = ('lt', 'le', 'eq', 'ne', 'ge', 'gt', 'int', 'float')
 
-for op_sname in ops_act_on_value:
+for op_sname in ops_act_on_value + ops_not_implemented:
     op_lname = '__{0}__'.format(op_sname)
     setattr(DiffFloat, op_lname, cfunction(getattr(float, op_lname)))
 
