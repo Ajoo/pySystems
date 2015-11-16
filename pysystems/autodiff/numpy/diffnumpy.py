@@ -49,21 +49,12 @@ def _broadcast_derivative(index, dfun):
     def new_dfun(*args, **kwargs):
         result = dfun(*args, **kwargs)
         
-        rshape = result.shape
         dshape = args[index].shape
         
-        rndim = len(rshape)
-        dndim = len(dshape)
+        dshape = dshape + (1,)*(result.ndim-len(dshape)) + dshape
+        delta = np.identity(args[index].size).reshape(dshape)
         
-        no_broadcast = [dim > 1 for dim in dshape]
-        idx1 = np.array([False]*(rndim-dndim) + no_broadcast + [False]*dndim)
-        idx2 = np.array([False]*rndim + no_broadcast)
-        
-        a = np.arange(rndim+dndim)
-        a[idx1], a[idx2] = a[idx2], a[idx1]
-        
-        result = result[[Ellipsis]+[np.newaxis]*dndim].transpose(a)
-        return np.broadcast_to(result, rshape+dshape)
+        return result*delta
     return new_dfun
 
 _fun_prop_names = ('nin', 'nout', 'nargs', 'ntypes', 'types', 'identity')
@@ -82,11 +73,9 @@ class DiffUFunc(DiffFunction):
 
 def _index_derivative(index, ndim):
     if not isinstance(index, tuple):
-        index = (index,)
-    if Ellipsis in index:
-        index += (slice(None),)*ndim
-    return index
+        index = tuple(index)
 
+    return (slice(None),)*ndim + index
 
 #TODO: Make ndarray a factory class to support numpy nd arrays of objects that 
 #are not floats
@@ -169,47 +158,6 @@ class DiffNDArray(DiffObject):
 #        
 #    def __delslice__(self, i, j):
 #        self.__delitem__((slice(i, j),))
-    def __add__(self, other):
-        return add(self, other) #returns wrapped add ufunc
-
-    def __sub__(self, other):
-        return add(self, -other)
-    
-    def __mul__(self, other):
-        return multiply(self, other) #returns wrapped add ufunc
-        
-    def __floordiv__(self, other):
-        return NotImplemented
-        
-    def __mod__(self, other):
-        return NotImplemented
-        
-    def __divmod__(self, other, modulo=None):
-        return NotImplemented
-        
-    def __pow__(self, other): #modulo?
-        return power(self, other)
-        
-    def __lshift__(self, other):
-        return NotImplemented
-    
-    def __rshift__(self, other):
-        return NotImplemented
-        
-    def __and__(self, other):
-        return NotImplemented
-        
-    def __xor__(self, other):
-        return NotImplemented
-        
-    def __or__(self, other):
-        return NotImplemented
-    
-    def __div__(self, other):
-        return divide(self, other)
-        
-    def __truediv__(self, other): #? Difference?
-        return divide(self, other)
     
     def __iter__(self):
         raise NotImplementedError("__iter__ not yet implemented")
@@ -224,15 +172,12 @@ class DiffNDArray(DiffObject):
         self.d[self] = d_self
             
     def derivative(self, wrt):
-        if isinstance(wrt, DiffNDArray):
-            dshape = self.shape + wrt.shape
-        else:
-            dshape = self.shape
+        dshape = wrt.shape + self.shape
         return self.d.get(wrt, np.zeros(dshape))
     
     def chain(self, df):
         ax = (range(-self.ndim,0),range(self.ndim)) #last ndims df * first ndims d
-        d = {k: np.tensordot(df,dk,axes=ax) for k, dk in self.d.viewitems()}
+        d = {k: np.tensordot(dk,df,axes=ax) for k, dk in self.d.viewitems()}
         return d
         
     def delta(self, eps=None):
@@ -246,7 +191,7 @@ class DiffNDArray(DiffObject):
         if not eps:
             eps = self.eps
         df = (np.stack(delta)-f)/eps
-        df = np.rollaxis(df,1).reshape(f.shape + self.shape)
+        df = df.reshape(self.shape + f.shape)
         return self.chain(df)  
 DiffObject._types[np.ndarray] = DiffNDArray
 #for now register numpy scalar float types

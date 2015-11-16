@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from .diffnumpy import *
 from .math import *
+from . import scalar
 
 __all__ = diffnumpy.__all__ + math.__all__
 
