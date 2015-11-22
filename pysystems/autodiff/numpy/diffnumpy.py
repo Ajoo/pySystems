@@ -25,7 +25,13 @@ __all__ = [
     'DiffNDArray',
     'darray'
     ]
-    
+
+#Monkey path DiffFloat to required properties/methods to work with numpy
+DiffFloat.sqrt = lambda self: self**.5
+DiffFloat.ndim = 0
+DiffFloat.shape = tuple()
+DiffFloat.size = 0
+
 def passthrough_properties(field, prop_names):
     def decorate(cls):
         for prop_name in prop_names:
@@ -70,12 +76,9 @@ class DiffUFunc(DiffFunction):
 
         self.dfun += [NoneFunction]*(index-len(self.dfun)) + [dfun]
 
-
-def _index_derivative(index, ndim):
-    if not isinstance(index, tuple):
-        index = tuple(index)
-
-    return (slice(None),)*ndim + index
+@passthrough_properties('fun', _fun_prop_names)
+class ConstUFunc(ConstFunction):
+    pass
 
 #TODO: Make ndarray a factory class to support numpy nd arrays of objects that 
 #are not floats
@@ -192,7 +195,8 @@ class DiffNDArray(DiffObject):
             eps = self.eps
         df = (np.stack(delta)-f)/eps
         df = df.reshape(self.shape + f.shape)
-        return self.chain(df)  
+        return self.chain(df)
+        
 DiffObject._types[np.ndarray] = DiffNDArray
 #for now register numpy scalar float types
 #TODO: implement specialized scalar types

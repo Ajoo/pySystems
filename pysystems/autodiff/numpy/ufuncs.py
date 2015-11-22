@@ -13,13 +13,12 @@ except ImportError:
     pass
 
 import numpy as np
-from ..autodiff import cfunction
-from .diffnumpy import DiffUFunc, DiffNDArray
+from .diffnumpy import ConstUFunc, DiffUFunc, DiffNDArray
 
 ##############################  MATH  OPS  ####################################
 cufuncs = ['floor_divide', 'remainder', 'mod', 'fmod', 'rint', 'sign', 'ones_like']
 for ufunc_name in cufuncs:
-    globals()[ufunc_name] = cfunction(getattr(np, ufunc_name))
+    globals()[ufunc_name] = ConstUFunc(getattr(np, ufunc_name))
 
 ones2args = lambda x1, x2: np.ones(np.broadcast(x1, x2).shape)
 
@@ -37,7 +36,7 @@ ufunc_derivatives = {
     'square': [lambda x: 2*x],
     'reciprocal': [lambda x: -np.reciprocal(x**2)],
     'add': [ones2args]*2,
-    'subtract': [lambda x, y: -ones2args]*2,
+    'subtract': [ones2args, lambda x, y: -ones2args(x,y)],
     'multiply': [lambda x, y: np.broadcast_arrays(x, y)[1],
                  lambda x, y: np.broadcast_arrays(x, y)[0]],
     'true_divide': [lambda x, y: np.reciprocal(y),
@@ -73,6 +72,6 @@ for op_sname, ufunc in dict(uops, **bops).viewitems():
     setattr(DiffNDArray, op_lname, ufunc)
 
 __all__ = cufuncs + ufunc_derivatives.keys()
-del ones2args, cufuncs, ufunc_derivatives
+del cufuncs, ufunc_derivatives
 del uops, bops, reflected
 ##############################  TRIG FUNCS  ###################################

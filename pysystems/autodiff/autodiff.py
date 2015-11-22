@@ -24,6 +24,8 @@ __all__ = [
     
     'DiffFunction',
     'dfunction',
+    
+    'ConstFunction',
     'cfunction',
     
     'DiffFloat',
@@ -163,7 +165,6 @@ class DiffFunction(object):
     
     fd = finite_differences #alias for convenience
     
-    
     #TODO: use itertools for lazy evaluation and memory efficiency
     def __call__(self, *args, **kwargs):
         argvalues = [arg.value if isinstance(arg, DiffObject) else arg for arg in args]
@@ -204,22 +205,36 @@ class DiffFunction(object):
 #        return functools.partial(DiffFunction.__call__, self, instance) 
 #        #return types.MethodType(self, instance)
 
+dfunction = DiffFunction #alias
+##HACK
+#class DictWrapper(object):
+#    def __init__(self,d):
+#        self.__dict__ = d
+##? Alternative implementation?
+#def dfunction(fun, *dfun):
+#    self = DictWrapper(locals())
+#    
+#    def wrapped(*args, **kwargs):
+#        return DiffFunction.__call__.im_func(self, *args, **kwargs)
+#    try:
+#        return functools.wraps(fun)(wrapped)
+#    except:
+#        return wrapped
 
-#HACK
-class DictWrapper(object):
-    def __init__(self,d):
-        self.__dict__ = d
-#? Alternative implementation?
-def dfunction(fun, *dfun):
-    self = DictWrapper(locals())
+class ConstFunction(object):
+    def __init__(self, fun, *dfun):#, **kdfun):
+        self.fun = fun
     
-    def wrapped(*args, **kwargs):
-        return DiffFunction.__call__.im_func(self, *args, **kwargs)
-    try:
-        return functools.wraps(fun)(wrapped)
-    except:
-        return wrapped
-
+    def __call__(self, *args, **kwargs):
+        argvalues = [arg.value if isinstance(arg, DiffObject) else arg for arg in args]
+        kwargvalues = kwargs #TODO: for now can not diff wrt kwargs
+        
+        return self.fun(*argvalues, **kwargvalues)
+        
+    def __get__(self, instance, cls):
+        #return functools.partial(DiffFunction.__call__, self, instance) 
+        return types.MethodType(self, instance)
+        
 #function wrapper for piecewise constant functions
 #the wrapped function will return its normal output (not a DiffObject) with
 #all arguments replaced by their values in case these
@@ -234,8 +249,7 @@ def cfunction(fun):
         kwargvalues = kwargs #TODO: for now can not diff wrt kwargs
         
         return fun(*argvalues, **kwargvalues)
-    return wrapped       
-        
+    return wrapped
 #------------------------------------------------------------------------------
 #   DiffFloat - DiffObject specialization for representing floats with
 #               derivative information
